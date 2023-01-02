@@ -187,8 +187,6 @@ export class HarfBuzzFont {
 
     const svgLength = hb.hbjs_glyph_svg(this.ptr, glyphId, pathBuffer, pathBufferSize)
 
-    console.log("svglength", svgLength)
-
     const result = svgLength > 0 ? HarfBuzzFont.utf8Decoder.decode(hb.heapu8.subarray(pathBuffer, pathBuffer + svgLength)) : "" 
     hb.free(pathBuffer)
     return result
