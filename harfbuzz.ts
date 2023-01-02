@@ -242,7 +242,7 @@ export function shape(text: string, font: HarfBuzzFont, features: any): Array<Gl
   let buffer = new HarfBuzzBuffer();
   buffer.addText(text);
   buffer.guessSegmentProperties();
-  //buffer.shape(font, features);
+  hb.hb_shape(font.ptr, features.ptr, 0, 0);
   let result = buffer.json();
   buffer.destroy();
   return result;
