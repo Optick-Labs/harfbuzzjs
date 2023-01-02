@@ -3,7 +3,7 @@
 const HB_MEMORY_MODE_WRITABLE: number = 2;
 const HB_SET_VALUE_INVALID: Pointer = -1;
 
-class HarfBuzzExports {
+export class HarfBuzzExports {
   readonly heapu8: Uint8Array;
   readonly heapu32: Uint32Array;
   readonly heapi32: Int32Array;
