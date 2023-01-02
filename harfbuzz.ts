@@ -40,6 +40,12 @@ export class HarfBuzzExports {
   readonly hb_buffer_get_glyph_infos: (bufferPtr: Pointer, length: number) => any
   readonly hb_buffer_get_glyph_positions: (bufferPtr: Pointer, length: number) => any
   readonly hb_buffer_destroy: (bufferPtr: Pointer) => void
+  readonly hbjs_glyph_svg: (
+    fontPtr: Pointer,
+    glyph: number,
+    svg: Pointer,
+    svgLength: number,
+  ) => number
 
   constructor(exports: any) {
     this.heapu8 = new Uint8Array(exports.memory.buffer);
@@ -72,6 +78,7 @@ export class HarfBuzzExports {
     this.hb_buffer_get_glyph_infos = exports.hb_buffer_get_glyph_infos;
     this.hb_buffer_get_glyph_positions = exports.hb_buffer_get_glyph_positions;
     this.hb_buffer_destroy = exports.hb_buffer_destroy;
+    this.hbjs_glyph_svg = exports.hbjs_glyph_svg
   }
 
 }
@@ -158,6 +165,9 @@ export class HarfBuzzFont {
   readonly ptr: Pointer
   readonly unitsPerEM: number
 
+
+  static utf8Decoder = new TextDecoder("utf-8")
+
   constructor(face: HarfBuzzFace) {
     this.ptr = hb.hb_font_create(face.ptr);
     this.unitsPerEM = face.getUnitsPerEM();
@@ -169,6 +179,19 @@ export class HarfBuzzFont {
 
   destroy() {
     hb.hb_font_destroy(this.ptr);
+  }
+
+  glyphToPath(glyphId: number) {
+    const pathBufferSize = 100000
+    const pathBuffer = hb.malloc(pathBufferSize)
+
+    const svgLength = hb.hbjs_glyph_svg(this.ptr, glyphId, pathBuffer, pathBufferSize)
+
+    console.log("svglength", svgLength)
+
+    const result = svgLength > 0 ? HarfBuzzFont.utf8Decoder.decode(hb.heapu8.subarray(pathBuffer, pathBuffer + svgLength)) : "" 
+    hb.free(pathBuffer)
+    return result
   }
 }
 
@@ -219,8 +242,10 @@ export class HarfBuzzBuffer {
     var result = new Array<GlyphInformation>();
     var infosPtr32 = hb.hb_buffer_get_glyph_infos(this.ptr, 0) / 4;
     var positionsPtr32 = hb.hb_buffer_get_glyph_positions(this.ptr, 0) / 4;
+    console.log("infosPtr32", infosPtr32, "positionsPtr32", positionsPtr32)
     var infos = hb.heapu32.subarray(infosPtr32, infosPtr32 + 5 * length);
     var positions = hb.heapi32.subarray(positionsPtr32, positionsPtr32 + 5 * length);
+    console.log("positions", positions)
     for (var i = 0; i < length; ++i) {
       result.push(new GlyphInformation(
         infos[i * 5 + 0],
@@ -230,6 +255,9 @@ export class HarfBuzzBuffer {
         positions[i * 5 + 2],
         positions[i * 5 + 3]));
     }
+
+    const data = hb.heapu8.subarray(this.ptr,  this.ptr+length)
+    console.log("data", data)
     return result;
   }
 
@@ -242,7 +270,7 @@ export function shape(text: string, font: HarfBuzzFont, features: any): Array<Gl
   let buffer = new HarfBuzzBuffer();
   buffer.addText(text);
   buffer.guessSegmentProperties();
-  hb.hb_shape(font.ptr, features.ptr, 0, 0);
+  hb.hb_shape(font.ptr, buffer.ptr, 0, 0);
   let result = buffer.json();
   buffer.destroy();
   return result;
