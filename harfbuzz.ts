@@ -240,10 +240,8 @@ export class HarfBuzzBuffer {
     var result = new Array<GlyphInformation>();
     var infosPtr32 = hb.hb_buffer_get_glyph_infos(this.ptr, 0) / 4;
     var positionsPtr32 = hb.hb_buffer_get_glyph_positions(this.ptr, 0) / 4;
-    console.log("infosPtr32", infosPtr32, "positionsPtr32", positionsPtr32)
     var infos = hb.heapu32.subarray(infosPtr32, infosPtr32 + 5 * length);
     var positions = hb.heapi32.subarray(positionsPtr32, positionsPtr32 + 5 * length);
-    console.log("positions", positions)
     for (var i = 0; i < length; ++i) {
       result.push(new GlyphInformation(
         infos[i * 5 + 0],
@@ -255,7 +253,6 @@ export class HarfBuzzBuffer {
     }
 
     const data = hb.heapu8.subarray(this.ptr,  this.ptr+length)
-    console.log("data", data)
     return result;
   }
 
