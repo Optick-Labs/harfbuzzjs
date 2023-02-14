@@ -35,6 +35,8 @@ _hb_set_get_population
 _hb_set_next_many
 _hb_shape
 _hbjs_glyph_svg
+_hbjs_glyph_blob
+_hbjs_set_weight
 _hbjs_shape_with_trace
 _malloc
 _free

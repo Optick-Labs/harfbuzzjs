@@ -5,6 +5,12 @@ HB_BEGIN_DECLS
 int
 hbjs_glyph_svg (hb_font_t *font, hb_codepoint_t glyph, char *buf, unsigned buf_size);
 
+int
+hbjs_glyph_blob (hb_font_t *font, hb_codepoint_t glyph, char *buf, unsigned buf_size, unsigned units_per_em);
+
+void
+hbjs_set_weight (hb_font_t *font, unsigned weight);
+
 unsigned
 hbjs_shape_with_trace (hb_font_t *font, hb_buffer_t* buf,
                        char* featurestring,
@@ -27,14 +33,17 @@ enum {
 struct user_data_t {
   user_data_t(char *str_,
               unsigned size_,
+              unsigned units_per_em_ = 0,
               unsigned stop_at_ = 0,
               unsigned stop_phase_ = 0)
     : str(str_)
     , size(size_)
+    , units_per_em(units_per_em_)
     , stop_at(stop_at_)
     , stop_phase(stop_phase_)
   {}
   char *str = nullptr;
+  unsigned units_per_em = 0;
   unsigned size = 0;
   unsigned consumed = 0;
   hb_bool_t failure = false;
@@ -145,6 +154,152 @@ hbjs_glyph_svg (hb_font_t *font, hb_codepoint_t glyph, char *buf, unsigned buf_s
   buf[draw_data.consumed] = '\0';
   return draw_data.consumed;
 }
+
+static hb_draw_funcs_t *blob_funcs = 0;
+
+static void
+move_to_blob (hb_draw_funcs_t *dfuncs, user_data_t *draw_data, hb_draw_state_t *,
+	 float to_x, float to_y,
+	 void *)
+{
+  if (draw_data->consumed + 9 >= draw_data->size)
+  {
+      draw_data->failure = true;
+      return;
+  }
+
+  draw_data->str[draw_data->consumed++] = 1;
+
+  float to_x_adjusted = to_x/(draw_data->units_per_em);
+  float to_y_adjusted = to_y/(draw_data->units_per_em);
+
+  memcpy(&draw_data->str[draw_data->consumed], &to_x_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+  memcpy(&draw_data->str[draw_data->consumed], &to_y_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+}
+
+static void
+line_to_blob (hb_draw_funcs_t *dfuncs, user_data_t *draw_data, hb_draw_state_t *,
+	 float to_x, float to_y,
+	 void *)
+{
+  if (draw_data->consumed + 9 >= draw_data->size)
+  {
+      draw_data->failure = true;
+      return;
+  }
+
+  draw_data->str[draw_data->consumed++] = 2;
+
+  float to_x_adjusted = to_x/(draw_data->units_per_em);
+  float to_y_adjusted = to_y/(draw_data->units_per_em);
+
+  memcpy(&draw_data->str[draw_data->consumed], &to_x_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+  memcpy(&draw_data->str[draw_data->consumed], &to_y_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+}
+
+static void
+quadratic_to_blob (hb_draw_funcs_t *dfuncs, user_data_t *draw_data, hb_draw_state_t *,
+	      float control_x, float control_y,
+	      float to_x, float to_y,
+	      void *)
+{
+  if (draw_data->consumed + 17 >= draw_data->size)
+  {
+      draw_data->failure = true;
+      return;
+  }
+
+  draw_data->str[draw_data->consumed++] = 3;
+
+  float control_x_adjusted = control_x/(draw_data->units_per_em);
+  float control_y_adjusted = control_y/(draw_data->units_per_em);
+
+  memcpy(&draw_data->str[draw_data->consumed], &control_x_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+  memcpy(&draw_data->str[draw_data->consumed], &control_y_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+
+  float to_x_adjusted = to_x/(draw_data->units_per_em);
+  float to_y_adjusted = to_y/(draw_data->units_per_em);
+
+  memcpy(&draw_data->str[draw_data->consumed], &to_x_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+  memcpy(&draw_data->str[draw_data->consumed], &to_y_adjusted, sizeof(float));
+  draw_data->consumed += 4;
+}
+
+static void
+cubic_to_blob (hb_draw_funcs_t *dfuncs, user_data_t *draw_data, hb_draw_state_t *current_state,
+	  float control1_x, float control1_y,
+	  float control2_x, float control2_y,
+	  float to_x, float to_y,
+	  void *)
+{
+  float current_x = current_state->path_start_x;
+  float current_y = current_state->path_start_y;
+
+  // Compute using de Casteljau's algorithm and output using quadratic_to_blob
+  float qx1 = (current_x + 2 * control1_x) / 3;
+  float qy1 = (current_y + 2 * control1_y) / 3;
+  float qx2 = (to_x + 2 * control2_x) / 3;
+  float qy2 = (to_y + 2 * control2_y) / 3;
+  float rx = (current_x + 3 * control1_x + 3 * control2_x + to_x) / 8;
+  float ry = (current_y + 3 * control1_y + 3 * control2_y + to_y) / 8;
+  quadratic_to_blob(dfuncs, draw_data, current_state, qx1, qy1, rx, ry, nullptr);
+  quadratic_to_blob(dfuncs, draw_data, current_state, qx2, qy2, to_x, to_y, nullptr);
+}
+
+
+
+static void
+close_path_blob (hb_draw_funcs_t *dfuncs, user_data_t *draw_data, hb_draw_state_t *, void *)
+{
+  if (draw_data->consumed + 1 >= draw_data->size)
+  {
+      draw_data->failure = true;
+      return;
+  }
+
+  draw_data->str[draw_data->consumed++] = 0;
+}
+
+int
+hbjs_glyph_blob (hb_font_t *font, hb_codepoint_t glyph, char *buf, unsigned buf_size, unsigned units_per_em)
+{
+  if (blob_funcs == 0) /* not the best pattern for multi-threaded apps which is not a concern here */
+  {
+    blob_funcs = hb_draw_funcs_create (); /* will be leaked */
+    hb_draw_funcs_set_move_to_func (blob_funcs, (hb_draw_move_to_func_t) move_to_blob, nullptr, nullptr);
+    hb_draw_funcs_set_line_to_func (blob_funcs, (hb_draw_line_to_func_t) line_to_blob, nullptr, nullptr);
+    hb_draw_funcs_set_quadratic_to_func (blob_funcs, (hb_draw_quadratic_to_func_t) quadratic_to_blob, nullptr, nullptr);
+    hb_draw_funcs_set_cubic_to_func (blob_funcs, (hb_draw_cubic_to_func_t) cubic_to_blob, nullptr, nullptr);
+    hb_draw_funcs_set_close_path_func (blob_funcs, (hb_draw_close_path_func_t) close_path_blob, nullptr, nullptr);
+  }
+
+  user_data_t draw_data(buf, buf_size, units_per_em);
+  buf[0] = 0;
+  draw_data.consumed += 1;
+
+  hb_font_get_glyph_shape (font, glyph, blob_funcs, &draw_data);
+  if (draw_data.failure)
+    return -1;
+
+  return draw_data.consumed;
+}
+
+void
+hbjs_set_weight (hb_font_t *font, unsigned weight) {
+  hb_variation_t variations[1];
+  variations[0].tag = HB_OT_TAG_VAR_AXIS_WEIGHT;
+  variations[0].value = weight;
+  hb_font_set_variations (font, variations, 1);
+}
+
+
 
 static hb_bool_t do_trace (hb_buffer_t *buffer,
                            hb_font_t   *font,
