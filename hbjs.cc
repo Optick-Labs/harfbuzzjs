@@ -43,8 +43,8 @@ struct user_data_t {
     , stop_phase(stop_phase_)
   {}
   char *str = nullptr;
-  unsigned units_per_em = 0;
   unsigned size = 0;
+  unsigned units_per_em = 0;
   unsigned consumed = 0;
   hb_bool_t failure = false;
   unsigned stop_at = 0;
